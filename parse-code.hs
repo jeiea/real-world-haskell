@@ -28,9 +28,17 @@ main = do
     mapM_ processPage pages'
     return ()
 
+getChapterDir :: BS.ByteString -> String
+getChapterDir content = if content =~ pat then dir else ""
+    where pat   = "<title>.*?(\\d+)\\..*?</title>"
+          title = content =~ pat :: [[BS.ByteString]]
+          chap  = BS.unpack . last . head $ title
+          dir   = "ch" ++ (reverse . take 2 . reverse $ '0' : chap)
+
 processPage :: BS.ByteString -> IO ()
 processPage content = mapM_  (uncurry writeFile') files
     where files = parsePage content
+
 
 unJust :: Maybe a -> a
 unJust (Just a) = a
@@ -50,13 +58,16 @@ parseDir f
 
 parsePage :: BS.ByteString -> [(String, BS.ByteString)]
 parsePage page = Map.foldrWithKey (\f c xs -> clear f c:xs) [] files
-    where codes = filter hasFileName (parseCode page)
-          fnames = map parseFileName codes
+    where paras = [(name, code) | code <- parseCode page,
+                                  hasFileName code,
+                                  let name = parseFileName code,
+                                  dir `BS.isPrefixOf` name]
+          dir = BS.pack $ getChapterDir page
           addToMap :: (BS.ByteString,BS.ByteString) -> Map.Map BS.ByteString BS.ByteString -> Map.Map BS.ByteString BS.ByteString
           append' e n = e `BS.append` (BS.pack "\n\n") `BS.append` n
           addToMap (f,c) = Map.insertWith append' f c
           emptyMap = Map.empty :: Map.Map BS.ByteString BS.ByteString
-          files = foldr addToMap emptyMap (zip fnames codes)
+          files = foldr addToMap emptyMap paras
           clear f c = (BS.unpack f, unescape c `BS.append` BS.pack "\n")
 
 parseCode :: BS.ByteString -> [BS.ByteString]
